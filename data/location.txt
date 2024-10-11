@@ -1,0 +1,11 @@
+breed	Latitude	Longitude	Location
+DormaSheep	32.2643	91.6843	"Anduo County, Nagqu, Tibet"
+Gangbasheep	28.2756	88.5181	"Gamba County, Shigatse, Tibet"
+Gonggasheep	29.9124	102.2332	"Luding County, Garze, Sichuan"
+Huoerbasheep	29.7699	84.1589	"Zhongba County, Shigatse, Tibet"
+Heizangsheep	35.5885	100.7498	"Guinan County, Hainan, Qinghai"
+Jianchuansheep	26.5457	99.905	"Jianchuan County, Dali, Yunnan"
+Jiangzisheep	28.91	89.6055	"Jiangzi County, Shigatse, Tibet"
+Ninglangsheep	27.281	100.852	"Ninglang Yi Autonomous County, Lijiang, Yunnan"
+Shangusheep	34.4731	100.2036	"Maqin County, Guoluo, Qinghai"
+Zuogongsheep	29.6791	97.8405	"Zuogong County, Chamdo, Tibet"
