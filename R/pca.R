@@ -1,3 +1,4 @@
+#' @export
 pca_ui <- function() {
   tabPanel("DimRed",
            fluidRow(
@@ -87,6 +88,7 @@ pca_ui <- function() {
   )
 }
 
+#' @export
 pca_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata) {
   values <- reactiveValues(showText = TRUE, showDataViewOptions = FALSE)
   recalculateresult <- reactiveValues(recalculate1 = NULL)

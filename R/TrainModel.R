@@ -1,3 +1,4 @@
+#' @export
 TrainModel_ui <- function() {
   tabPanel("TrainModel",
            fluidRow(
@@ -125,6 +126,8 @@ TrainModel_ui <- function() {
            )
   )
 }
+
+#' @export
 TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata) {
   values <- reactiveValues(showText = TRUE, showDataViewOptions = FALSE)
   recalculateresult <- reactiveValues(recalculate1 = NULL)

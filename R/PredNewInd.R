@@ -1,3 +1,4 @@
+#' @export
 PredNewInd_ui <- function() {
   tabPanel("PredNewInd",
            fluidRow(
@@ -42,6 +43,8 @@ PredNewInd_ui <- function() {
            )
   )
 }
+
+#' @export
 PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata) {
   rvResults_PredNewInd <- reactiveValues(data = NULL)
   values <- reactiveValues(showText = TRUE, showDataViewOptions = FALSE)

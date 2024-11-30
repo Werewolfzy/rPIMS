@@ -1,3 +1,4 @@
+#' @export
 data_ui <- function() {
   tabPanel("DATA",
            fluidRow(
@@ -19,6 +20,7 @@ data_ui <- function() {
   )
 }
 
+#' @export
 data_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca) {
   uploadedFileInfo <- reactiveVal(NULL)
   uploadedFileInfoClassification <- reactiveVal(NULL)

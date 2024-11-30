@@ -1,3 +1,4 @@
+#' @export
 PhyloTree_ui <- function() {
   tabPanel("PhyloTree",
            fluidRow(
@@ -93,6 +94,8 @@ PhyloTree_ui <- function() {
            )
   )
 }
+
+#' @export
 PhyloTree_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata) {
   values <- reactiveValues(showText = TRUE, showDataViewOptions = FALSE)
   recalculateresult <- reactiveValues(recalculate1 = NULL)

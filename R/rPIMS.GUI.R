@@ -1,75 +1,35 @@
 #' @export
 #' @import shiny
 #' @import shinythemes
-#' @import shinyjs
-#' @import DT
 #' @import shinyWidgets
-#' @import colourpicker
 #' @import RColorBrewer
 #' @import ggplot2
 #' @import data.table
 #' @import sommer
-#' @import ggtree
 #' @import ape
 #' @import pbapply
 #' @import parallel
 #' @import infotheo
 #' @import caret
 #' @import class
-#' @import randomForest
 #' @import xgboost
-#' @import ranger
 #' @import ROCR
 #' @import smacof
 #' @import umap
 #' @import phangorn
-#' @import shinyalert
 #' @import leaflet
 #' @import e1071
-#' @import kernlab
-#' @import LEA
+#' @importFrom randomForest classCenter combine getTree grow importance MDSplot na.roughfix outlier partialPlot randomForest rfcv rfImpute rfNews treesize tuneRF varImpPlot varUsed
+#' @importFrom kernlab alphaindex anovadot as.kernelMatrix Asymbound AsympH0 b besseldot buffer centers coef convergence couple cross csi diagresidues dual edgegraph eig error fitted gausspr H0 how inchol inlearn ipop kcall kcca kcor kernelf kernelFast kernelMatrix kernelMult kernelPol kfa kha kkmeans kmmd kpar kpca kqr ksvm laplacedot lev lssvm maxresiduals mlike mmdstats nSV nvar obj onlearn param pcv pivots plot polydot predgain predict primal prior prob.model R Radbound ranking rbfdot rho rotated RVindex rvm scaling sigest size specc splinedot stringdot SVindex tanhdot truegain type vanilladot withinss xcoef xmatrix ycoef ymatrix
+#' @importFrom shinyjs addClass addCssClass click delay disable disabled enable extendShinyjs hidden hide hideElement html info inlineCSS logjs onclick onevent refresh removeClass removeCssClass removeEvent reset runcodeServer runcodeUI runjs showElement showLog toggle toggleClass toggleCssClass toggleElement toggleState useShinyjs
+#' @importFrom colourpicker colourInput colourPicker colourWidget plotHelper updateColourInput
+#' @importFrom DT %>% addRow clearSearch coerceValue colReorder datatable dataTableAjax dataTableProxy doColumnSearch doGlobalSearch DTOutput editData formatCurrency formatDate formatPercentage formatRound formatSignif formatString formatStyle hideCols JS reloadData renderDT replaceData saveWidget selectCells selectColumns selectPage selectRows showCols styleColorBar styleEqual styleInterval styleRow styleValue tableFooter tableHeader updateCaption updateFilters updateSearch
+#' @importFrom shinyalert closeAlert shinyalert useShinyalert
+#' @importFrom ranger csrf deforest getTerminalNodeIDs holdoutRF importance_pvalues predictions ranger timepoints treeInfo
+#' @importFrom ggtree %+>% %<% %<+% %>% add_colorbar aes arrow as.polytomy collapse Date2decimal decimal2Date expand facet_data facet_labeller facet_plot facet_widths flip fortify geom_aline geom_balance geom_cladelab geom_cladelabel geom_cladelabel2 geom_facet geom_highlight geom_hilight geom_inset geom_label geom_label2 geom_motif geom_nodelab geom_nodelab2 geom_nodepoint geom_point geom_point2 geom_range geom_rootedge geom_rootpoint geom_segment2 geom_strip geom_striplab geom_taxalink geom_text geom_text2 geom_tiplab geom_tiplab2 geom_tippoint geom_tree geom_tree2 geom_treescale geom_zoom_clade get.path get_clade_position get_heatmap_column_position get_taxa_name ggdensitree ggexpand ggplot ggsave ggtree gheatmap groupClade groupOTU guide_legend gzoom hexpand identify inset label_pad layout_circular layout_dendrogram layout_fan layout_inward_circular layout_rectangular MRCA msaplot multiplot nodebar nodeid nodelab nodepie open_tree plot_list range_format read.tree revts rotate_tree rtree scale_color scale_color_manual scale_color_subtree scale_colour_manual scale_colour_subtree scale_fill_manual scale_x_continuous scale_x_ggtree scale_x_range scaleClade set_hilight_legend td_filter td_mutate td_unnest theme theme_dendrogram theme_inset theme_tree theme_tree2 unit vexpand viewClade xlim xlim_expand xlim_tree zoomClade
+#' @importFrom LEA ancestrymap2geno ancestrymap2lfmm barchart combine.lfmmProject combine.snmfProject create.dataset cross.entropy cross.entropy.estimation export.lfmmProject export.pcaProject export.snmfProject G genetic.gap genetic.offset geno2lfmm import.lfmmProject import.pcaProject import.snmfProject lfmm lfmm.pvalues lfmm2 lfmm2.test lfmm2geno load.lfmmProject load.pcaProject load.snmfProject pca ped2geno ped2lfmm plot Q read.env read.geno read.lfmm read.zscore remove.lfmmProject remove.pcaProject remove.snmfProject show snmf snmf.pvalues struct2geno summary tracy.widom vcf2geno vcf2lfmm write.env write.geno write.lfmm z.scores
 
 rPIMS.GUI <- function() {
-  suppressPackageStartupMessages({
-    library(shiny)
-    library(shinythemes)
-    library(shinyjs)
-    library(DT)
-    library(shinyWidgets)
-    library(colourpicker)
-    library(RColorBrewer)
-    library(ggplot2)
-    library(data.table)
-    library(sommer)
-    library(ggtree)
-    library(ape)
-    library(pbapply)
-    library(parallel)
-    library(infotheo)
-    library(caret)
-    library(class)
-    library(randomForest)
-    library(xgboost)
-    library(ranger)
-    library(ROCR)
-    library(smacof)
-    library(umap)
-    library(phangorn)
-    library(shinyalert)
-    library(leaflet)
-    library(e1071)
-    library(kernlab)
-    library(LEA)
-  })
-
-  shinyEnv <- new.env()
-
-  source("R/data.R", local = shinyEnv)
-  source("R/pca.R", local = shinyEnv)
-  source("R/PhyloTree.R", local = shinyEnv)
-  source("R/PredNewInd.R", local = shinyEnv)
-  source("R/TrainModel.R", local = shinyEnv)
-  source("R/Structure.R", local = shinyEnv)
 
   ui <- fluidPage(
     useShinyjs(),
@@ -107,12 +67,12 @@ rPIMS.GUI <- function() {
       ),
 
 
-      shinyEnv$data_ui(),
-      shinyEnv$pca_ui(),
-      shinyEnv$PhyloTree_ui(),
-      shinyEnv$Structure_ui(),
-      shinyEnv$TrainModel_ui(),
-      shinyEnv$PredNewInd_ui(),
+      data_ui(),
+      pca_ui(),
+      PhyloTree_ui(),
+      Structure_ui(),
+      TrainModel_ui(),
+      PredNewInd_ui(),
     )
   )
 
@@ -124,12 +84,12 @@ rPIMS.GUI <- function() {
     rvpcaresultdata <- reactiveValues(pcaresult_data = NULL)
     rvtreeresultdata <- reactiveValues(treeresult_data = NULL)
     rvstructureresultdata <- reactiveValues(treeresult_data = NULL)
-    shinyEnv$data_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca)
-    shinyEnv$pca_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata)
-    shinyEnv$PhyloTree_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata)
-    shinyEnv$Structure_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata)
-    shinyEnv$TrainModel_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata)
-    shinyEnv$PredNewInd_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata)
+    data_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca)
+    pca_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata)
+    PhyloTree_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata)
+    Structure_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata)
+    TrainModel_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata)
+    PredNewInd_server(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata)
 
   }
   shinyApp(ui = ui, server = server)

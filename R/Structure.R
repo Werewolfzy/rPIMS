@@ -1,3 +1,4 @@
+#' @export
 Structure_ui <- function() {
   tabPanel("Structure",
            fluidRow(
@@ -72,6 +73,8 @@ Structure_ui <- function() {
            )
   )
 }
+
+#' @export
 Structure_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata) {
   values <- reactiveValues(showText = TRUE, showDataViewOptions = FALSE)
   recalculateresult <- reactiveValues(recalculate1 = NULL)
