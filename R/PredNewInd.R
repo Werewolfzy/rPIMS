@@ -48,7 +48,62 @@ PredNewInd_ui <- function() {
 PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, rvdatacloca, rvpcaresultdata, rvtreeresultdata, rvstructureresultdata) {
   rvResults_PredNewInd <- reactiveValues(data = NULL)
   values <- reactiveValues(showText = TRUE, showDataViewOptions = FALSE)
+
+  validate_sample <- function(model, sample, pred_class) {
+    if (!is.null(model$meta)) {
+      tryCatch({
+        result <- switch(
+          model$meta$validation_type,
+          "distance" = {
+            if (!pred_class %in% model$meta$class_centers$Class) return(TRUE)
+            center <- model$meta$class_centers[model$meta$class_centers$Class == pred_class, -1]
+            sample_vector <- as.numeric(sample)
+            center_vector <- as.numeric(center)
+            if (any(is.na(sample_vector)) || any(is.na(center_vector))) return(TRUE)
+            distance <- sqrt(sum((sample_vector - center_vector)^2))
+            threshold <- max(model$meta$distance_thresholds)
+            if (is.na(threshold)) return(TRUE)
+            distance > threshold
+          },
+          "probability" = {
+            prob <- max(predict(model, sample, type = "prob"))
+            threshold <- min(model$meta$prob_thresholds)
+            if (is.na(threshold)) return(TRUE)
+            is.na(prob) || prob < threshold
+          },
+          "leaf_path" = {
+            leaves <- predict(model$finalModel, as.matrix(sample), predleaf = TRUE)
+            global_min_freq <- min(model$meta$min_freq)
+            any(sapply(1:ncol(leaves), function(j) {
+              leaf_id <- leaves[1, j]
+              freq <- model$meta$leaf_frequency[[j]][as.character(leaf_id)]
+              is.na(freq) || freq < global_min_freq
+            }))
+          },
+          "margin" = {
+            margin <- kernlab::predict(model$finalModel, as.matrix(sample))
+            threshold <- min(model$meta$margin_thresholds)
+            if (is.na(threshold)) return(TRUE)
+            is.na(margin) || margin < threshold
+          },
+          FALSE
+        )
+        if (is.null(result)) {
+          warning("Unrecognized validation type: ", model$meta$validation_type)
+          return(FALSE)
+        }
+        return(result)
+      }, error = function(e) {
+        message("Validation error: ", e$message)
+        return(TRUE)
+      })
+    } else {
+      return(FALSE)
+    }
+  }
+
   mapDisplayed <- reactiveVal(FALSE)
+
   observeEvent(input$calculate_PredNewInd, {
     withProgress(message = 'Calculating...', value = 0, {
       setProgress(value = 0.1)
@@ -124,6 +179,7 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
             cancelButtonText = "Re-upload",
             callbackR = function(value) {
               if (value) {
+                na_counts <- rowSums(is.na(new_matched_data))
                 map <- setNames(c(0), c("NA"))
                 new_matched_data[] <- lapply(new_matched_data, function(x) {
                   key <- ifelse(is.na(x), "NA", as.character(x))
@@ -141,18 +197,40 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
                     }
                     return(adjusted_prob)
                   }
-                  predicted_probability <- sapply(1:nrow(new_matched_data), function(i) {
-                    original_prob <- predicted_probabilities[i, predicted_results[i]]
-                    adjusted_prob <- adjust_probability(original_prob, alpha = 2)
-                    return(formatC(round(adjusted_prob, 2), format = "f", digits = 2))
+                  confidence_info <- lapply(1:nrow(new_matched_data), function(i) {
+                    original_na_count <- na_counts[i]
+                    total_features <- ncol(new_matched_data)
+                    if (original_na_count > total_features / 3) {
+                      adjusted_prob <- NA
+                      confidence <- "Uncertain"
+                    } else {
+                      sample_row <- new_matched_data[i, , drop = FALSE]
+                      pred_class <- as.character(predicted_results[i])
+                      is_uncertain <- validate_sample(pred_trainmodel, sample_row, pred_class)
+                      original_prob <- predicted_probabilities[i, pred_class]
+                      if (is_uncertain) {
+                        adjusted_prob <- NA
+                        confidence <- "Uncertain"
+                      } else {
+                        adjusted_prob <- adjust_probability(original_prob, alpha = 2)
+                        confidence <- "Reliable"
+                      }
+                    }
+                    list(
+                      z_score = ifelse(is.na(adjusted_prob), NA, formatC(round(adjusted_prob, 2), format = "f", digits = 2)),
+                      confidence = confidence
+                    )
                   })
+                  predicted_probability <- sapply(confidence_info, function(x) x$z_score)
+                  confidence <- sapply(confidence_info, function(x) x$confidence)
                   predicted_df <- data.frame(
                     IID = rownames(new_matched_data),
                     predicted_result = predicted_results,
-                    z_score = predicted_probability
+                    z_score = predicted_probability,
+                    confidence = confidence
                   )
                   result_df <- merge(predicted_df, pred_trainlocal, by.x = "predicted_result", by.y = "breed", all.x = TRUE)
-                  result_df <- result_df[, c("IID", "predicted_result", "z_score", "Latitude", "Longitude", "Location")]
+                  result_df <- result_df[, c("IID", "predicted_result", "z_score", "confidence", "Latitude", "Longitude", "Location")]
                   setDT(result_df)
                   result_df_combined <- result_df[, .(IIDs = paste(IID, collapse = ", ")), by = .(Latitude, Longitude)]
                   rvResults_PredNewInd$data <- result_df
@@ -187,18 +265,33 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
               }
               return(adjusted_prob)
             }
-            predicted_probability <- sapply(1:nrow(new_matched_data), function(i) {
-              original_prob <- predicted_probabilities[i, predicted_results[i]]
-              adjusted_prob <- adjust_probability(original_prob, alpha = 2)
-              return(formatC(round(adjusted_prob, 2), format = "f", digits = 2))
+            confidence_info <- lapply(1:nrow(new_matched_data), function(i) {
+              sample_row <- new_matched_data[i, , drop = FALSE]
+              pred_class <- as.character(predicted_results[i])
+              is_uncertain <- validate_sample(pred_trainmodel, sample_row, pred_class)
+              original_prob <- predicted_probabilities[i, pred_class]
+              if (is_uncertain) {
+                adjusted_prob <- NA
+                confidence <- "Uncertain"
+              } else {
+                adjusted_prob <- adjust_probability(original_prob, alpha = 2)
+                confidence <- "Reliable"
+              }
+              list(
+                z_score = ifelse(is.na(adjusted_prob), NA, formatC(round(adjusted_prob, 2), format = "f", digits = 2)),
+                confidence = confidence
+              )
             })
+            predicted_probability <- sapply(confidence_info, function(x) x$z_score)
+            confidence <- sapply(confidence_info, function(x) x$confidence)
             predicted_df <- data.frame(
               IID = rownames(new_matched_data),
               predicted_result = predicted_results,
-              z_score = predicted_probability
+              z_score = predicted_probability,
+              confidence = confidence
             )
             result_df <- merge(predicted_df, pred_trainlocal, by.x = "predicted_result", by.y = "breed", all.x = TRUE)
-            result_df <- result_df[, c("IID", "predicted_result", "z_score", "Latitude", "Longitude", "Location")]
+            result_df <- result_df[, c("IID", "predicted_result", "z_score", "confidence", "Latitude", "Longitude", "Location")]
             setDT(result_df)
             result_df_combined <- result_df[, .(IIDs = paste(IID, collapse = ", ")), by = .(Latitude, Longitude)]
             rvResults_PredNewInd$data <- result_df
@@ -227,12 +320,17 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
           cancelButtonText = "Re-upload",
           callbackR = function(value) {
             if (value) {
-              new_matched_data <- data.table(matrix(nrow=nrow(matched_data), ncol=0))
+              new_matched_data <- data.table(full_0 = rep(0, nrow(matched_data)))
+              matched_data_columns <- colnames(matched_data)
               for (feature in pred_trainsnp_features) {
                 if (feature %in% matched_data_columns) {
-                  new_matched_data[, (feature) := matched_data[[feature]]]
+                  current_col <- matched_data[[feature]]
+                  if (length(current_col) != nrow(new_matched_data)) {
+                    stop(paste("Column", feature, "has incorrect length. Expected", nrow(new_matched_data), "but got", length(current_col)))
+                  }
+                  new_matched_data[, (feature) := current_col]
                 } else {
-                  new_matched_data[, (feature) := NA]
+                  new_matched_data[, (feature) := rep(NA, nrow(new_matched_data))]
                 }
               }
               if (any(is.na(new_matched_data))) {
@@ -245,6 +343,7 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
                   cancelButtonText = "Re-upload",
                   callbackR = function(value) {
                     if (value) {
+                      na_counts <- rowSums(is.na(new_matched_data))
                       map <- setNames(c(0), c("NA"))
                       new_matched_data[] <- lapply(new_matched_data, function(x) {
                         key <- ifelse(is.na(x), "NA", as.character(x))
@@ -262,18 +361,40 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
                           }
                           return(adjusted_prob)
                         }
-                        predicted_probability <- sapply(1:nrow(new_matched_data), function(i) {
-                          original_prob <- predicted_probabilities[i, predicted_results[i]]
-                          adjusted_prob <- adjust_probability(original_prob, alpha = 2)
-                          return(formatC(round(adjusted_prob, 2), format = "f", digits = 2))
+                        confidence_info <- lapply(1:nrow(new_matched_data), function(i) {
+                          original_na_count <- na_counts[i]
+                          total_features <- ncol(new_matched_data)
+                          if (original_na_count > total_features / 3) {
+                            adjusted_prob <- NA
+                            confidence <- "Uncertain"
+                          } else {
+                            sample_row <- new_matched_data[i, , drop = FALSE]
+                            pred_class <- as.character(predicted_results[i])
+                            is_uncertain <- validate_sample(pred_trainmodel, sample_row, pred_class)
+                            original_prob <- predicted_probabilities[i, pred_class]
+                            if (is_uncertain) {
+                              adjusted_prob <- NA
+                              confidence <- "Uncertain"
+                            } else {
+                              adjusted_prob <- adjust_probability(original_prob, alpha = 2)
+                              confidence <- "Reliable"
+                            }
+                          }
+                          list(
+                            z_score = ifelse(is.na(adjusted_prob), NA, formatC(round(adjusted_prob, 2), format = "f", digits = 2)),
+                            confidence = confidence
+                          )
                         })
+                        predicted_probability <- sapply(confidence_info, function(x) x$z_score)
+                        confidence <- sapply(confidence_info, function(x) x$confidence)
                         predicted_df <- data.frame(
                           IID = rownames(new_matched_data),
                           predicted_result = predicted_results,
-                          z_score = predicted_probability
+                          z_score = predicted_probability,
+                          confidence = confidence
                         )
                         result_df <- merge(predicted_df, pred_trainlocal, by.x = "predicted_result", by.y = "breed", all.x = TRUE)
-                        result_df <- result_df[, c("IID", "predicted_result", "z_score", "Latitude", "Longitude", "Location")]
+                        result_df <- result_df[, c("IID", "predicted_result", "z_score", "confidence", "Latitude", "Longitude", "Location")]
                         setDT(result_df)
                         result_df_combined <- result_df[, .(IIDs = paste(IID, collapse = ", ")), by = .(Latitude, Longitude)]
                         rvResults_PredNewInd$data <- result_df
@@ -298,6 +419,7 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
               } else {
                 output$resultText <- renderText("No NA values found in the data")
                 withProgress(message = 'Predicting...', value = 0.8, {
+                  print(444)
                   rownames(new_matched_data) <- original_row_names
                   predicted_results <- predict(pred_trainmodel, new_matched_data)
                   predicted_probabilities <- predict(pred_trainmodel, new_matched_data, type = "prob")
@@ -308,18 +430,40 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
                     }
                     return(adjusted_prob)
                   }
-                  predicted_probability <- sapply(1:nrow(new_matched_data), function(i) {
-                    original_prob <- predicted_probabilities[i, predicted_results[i]]
-                    adjusted_prob <- adjust_probability(original_prob, alpha = 2)
-                    return(formatC(round(adjusted_prob, 2), format = "f", digits = 2))
+                  confidence_info <- lapply(1:nrow(new_matched_data), function(i) {
+                    original_na_count <- na_counts[i]
+                    total_features <- ncol(new_matched_data)
+                    if (original_na_count > total_features / 3) {
+                      adjusted_prob <- NA
+                      confidence <- "Uncertain"
+                    } else {
+                      sample_row <- new_matched_data[i, , drop = FALSE]
+                      pred_class <- as.character(predicted_results[i])
+                      is_uncertain <- validate_sample(pred_trainmodel, sample_row, pred_class)
+                      original_prob <- predicted_probabilities[i, pred_class]
+                      if (is_uncertain) {
+                        adjusted_prob <- NA
+                        confidence <- "Uncertain"
+                      } else {
+                        adjusted_prob <- adjust_probability(original_prob, alpha = 2)
+                        confidence <- "Reliable"
+                      }
+                    }
+                    list(
+                      z_score = ifelse(is.na(adjusted_prob), NA, formatC(round(adjusted_prob, 2), format = "f", digits = 2)),
+                      confidence = confidence
+                    )
                   })
+                  predicted_probability <- sapply(confidence_info, function(x) x$z_score)
+                  confidence <- sapply(confidence_info, function(x) x$confidence)
                   predicted_df <- data.frame(
                     IID = rownames(new_matched_data),
                     predicted_result = predicted_results,
-                    z_score = predicted_probability
+                    z_score = predicted_probability,
+                    confidence = confidence
                   )
                   result_df <- merge(predicted_df, pred_trainlocal, by.x = "predicted_result", by.y = "breed", all.x = TRUE)
-                  result_df <- result_df[, c("IID", "predicted_result", "z_score", "Latitude", "Longitude", "Location")]
+                  result_df <- result_df[, c("IID", "predicted_result", "z_score", "confidence", "Latitude", "Longitude", "Location")]
                   setDT(result_df)
                   result_df_combined <- result_df[, .(IIDs = paste(IID, collapse = ", ")), by = .(Latitude, Longitude)]
                   rvResults_PredNewInd$data <- result_df
@@ -345,6 +489,7 @@ PredNewInd_server <- function(input, output, session, rvdataclass, rvdatageno, r
       }
     })
   })
+
   output$downloadTable_PredNewInd <- downloadHandler(
     filename = function() {
       paste("Prediction_Results", Sys.Date(), ".csv", sep = "")

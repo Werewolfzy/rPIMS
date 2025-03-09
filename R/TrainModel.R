@@ -51,7 +51,13 @@ TrainModel_ui <- function() {
                                               "Variance_Test" = "Variance_Test"),
                                   selected = "Chi_square_Test"),
                       numericInput("p_selector", "Select Training Set Proportion", value = 0.8, min = 0.3, max = 0.95, step = 0.05),
-                      numericInput("cv_selector", "Select Number of Cross-Validation Folds", value = 10, min = 2, max = 10, step = 1),
+                      selectInput("cv_method", "Select Cross-Validation Method",
+                                  choices = c("K-Fold" = "cv",
+                                              "Leave-One-Out" = "LOOCV",
+                                              "Randomized Cross-Validation" = "randomized_cv"),
+                                  selected = "cv"),
+                      numericInput("cv_selector", "Select Number of Cross-Validation Folds",
+                                   value = 10, min = 2, max = 10, step = 1),
                       selectInput("model_selector", "Select Machine Learning Model",
                                   choices = c("Please select..." = "",
                                               "KNN" = "KNN",
@@ -93,6 +99,8 @@ TrainModel_ui <- function() {
                     uiOutput("conditionalUI_TrainModel"),
                     plotOutput("plot_TrainModel"),
                     verbatimTextOutput("confusion_matrix_output"),
+                    tableOutput("performance_metrics_table"),
+                    DTOutput("cv_results_table"),
                     div(id = "radioButtonsContainer", style = "display: flex; align-items: center; justify-content: space-between;",
                         column(width = 4, class = "text-center",
                                actionButton("recalculate_TrainModel", "ReCalculate", style = "width: 100%; background-color: #3374AC; color: white; font-weight: bold; font-size: 16px; padding: 10px; margin-top: 10px;"),
@@ -485,7 +493,13 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           selected_model <- input$model_selector
           if (selected_model == "KNN") {
             number_cv = input$cv_selector
-            control_knn <- trainControl(method = "cv", number = number_cv, savePredictions = "final")
+            if (input$cv_method == "cv") {
+              control_knn <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "LOOCV") {
+              control_knn <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "randomized_cv") {
+              control_knn <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+            }
             tuneGrid_knn <- expand.grid(k = seq(1, 20, by = 2))
             knn_model <- train(x = x, y = y, method = "knn", trControl = control_knn, tuneGrid = tuneGrid_knn)
             predictions <- predict(knn_model, test_data, type = "prob")
@@ -505,11 +519,32 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
             selected_data_model <- significant_data[, ..selected_features]
             predictions_knn <- factor(predict(knn_model, test_data), levels = levels(test_data$class))
             confMat_knn <- confusionMatrix(predictions_knn, test_data$class)
+            class_centers <- aggregate(x, by = list(y), FUN = mean)
+            colnames(class_centers)[1] <- "Class"
+            distance_thresholds <- sapply(levels(y), function(cls) {
+              cls_samples <- x[y == cls, ]
+              distances <- apply(cls_samples, 1, function(sample) {
+                sqrt(sum((sample - class_centers[class_centers$Class == cls, -1])^2))
+              })
+              quantile(distances, 0.95)
+            })
+            knn_model$meta <- list(
+              class_centers = class_centers,
+              distance_thresholds = distance_thresholds,
+              validation_type = "distance"
+            )
+            knn_model$meta$distance_thresholds <- distance_thresholds * 1.2
             confMat_model <- confMat_knn
             model_to_save <- knn_model
           } else if (selected_model == "Random_Forest") {
             number_cv <- input$cv_selector
-            control_rf <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+            if (input$cv_method == "cv") {
+              control_rf <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "LOOCV") {
+              control_rf <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "randomized_cv") {
+              control_rf <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+            }
             tuneGrid_rf <- expand.grid(
               mtry = c(1, floor(sqrt(ncol(train_data) - 1)), ncol(train_data) - 1),
               splitrule = c("gini", "extratrees"),
@@ -539,11 +574,25 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
             selected_data_model <- significant_data[, ..selected_features]
             predictions_rf <- factor(predict(rf_model, test_data), levels = levels(test_data$class))
             confMat_rf <- confusionMatrix(predictions_rf, test_data$class)
+            oob_probs <- rf_model$pred[order(rf_model$pred$rowIndex), ]
+            prob_thresholds <- sapply(levels(y), function(cls) {
+              quantile(oob_probs[oob_probs$obs == cls, cls], 0.05)
+            })
+            rf_model$meta <- list(
+              prob_thresholds = prob_thresholds,
+              validation_type = "probability"
+            )
             confMat_model <- confMat_rf
             model_to_save <- rf_model
           } else if (selected_model == "XGBoost") {
             number_cv <- input$cv_selector
-            control_xgb <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+            if (input$cv_method == "cv") {
+              control_xgb <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "LOOCV") {
+              control_xgb <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "randomized_cv") {
+              control_xgb <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+            }
             tuneGrid_xgb <- expand.grid(
               nrounds = c(100, 200),
               max_depth = c(3, 6, 9),
@@ -570,12 +619,28 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
             selected_data_model <- significant_data[, ..selected_features]
             predictions_xgb <- factor(predict(xgb_model, test_data), levels = levels(test_data$class))
             confMat_xgb <- confusionMatrix(predictions_xgb, test_data$class)
+            train_leaves <- predict(xgb_model$finalModel, as.matrix(x), predleaf = TRUE)
+            leaf_freq <- apply(train_leaves, 2, function(col) {
+              freq_table <- table(col)
+              freq_table / nrow(train_leaves)
+            })
+            xgb_model$meta <- list(
+              leaf_frequency = leaf_freq,
+              validation_type = "leaf_path",
+              min_freq = 0.01
+            )
             confMat_model <- confMat_xgb
             model_to_save <- xgb_model
           } else if (selected_model == "SVM") {
             number_cv <- input$cv_selector
-            control_svm <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
-            svm_model <- train(x = x, y = y, method = "knn", trControl = control_svm)
+            if (input$cv_method == "cv") {
+              control_svm <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "LOOCV") {
+              control_svm <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+            } else if (input$cv_method == "randomized_cv") {
+              control_svm <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+            }
+            svm_model <- train(x = x, y = y, method = "svmRadial", trControl = control_svm)
             predictions <- predict(svm_model, test_data, type = "prob")
             class_levels <- levels(test_data$class)
             n_classes <- length(class_levels)
@@ -598,6 +663,14 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
             selected_data_model <- significant_data[, ..selected_features]
             predictions_svm <- factor(predict(svm_model, test_data), levels = levels(test_data$class))
             confMat_svm <- confusionMatrix(predictions_svm, test_data$class)
+            decision_values <- kernlab::predict(svm_model$finalModel, as.matrix(x))
+            margin_thresholds <- sapply(levels(y), function(cls) {
+              quantile(decision_values[y == cls], 0.05)
+            })
+            svm_model$meta <- list(
+              margin_thresholds = margin_thresholds,
+              validation_type = "margin"
+            )
             confMat_model <- confMat_svm
             model_to_save <- svm_model
           }
@@ -633,7 +706,50 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           })
           setProgress(value = 0.95)
           values$showText <- FALSE
+
+          output$cv_results_table <- renderDT({
+            req(model_to_save, confMat_model)
+
+            class_names <- rownames(confMat_model$byClass)
+
+            results_list <- lapply(class_names, function(class_name) {
+              sensitivity <- ifelse(!is.na(confMat_model$byClass[class_name, "Sensitivity"]),
+                                    confMat_model$byClass[class_name, "Sensitivity"], NA)
+              specificity <- ifelse(!is.na(confMat_model$byClass[class_name, "Specificity"]),
+                                    confMat_model$byClass[class_name, "Specificity"], NA)
+              recall <- ifelse(!is.na(confMat_model$byClass[class_name, "Recall"]),
+                               confMat_model$byClass[class_name, "Recall"], NA)
+              kappa <- ifelse(!is.na(confMat_model$overall["Kappa"]),
+                              confMat_model$overall["Kappa"], NA)
+              precision <- ifelse(!is.na(confMat_model$byClass[class_name, "Pos Pred Value"]),
+                                  confMat_model$byClass[class_name, "Pos Pred Value"], NA)
+              f1 <- ifelse(!is.na(confMat_model$byClass[class_name, "F1"]),
+                           confMat_model$byClass[class_name, "F1"], NA)
+
+              data.frame(
+                Class = class_name,
+                Sensitivity = sensitivity,
+                Specificity = specificity,
+                Recall = recall,
+                Kappa = kappa,
+                Precision = precision,
+                F1 = f1
+              )
+            })
+
+            results_df <- do.call(rbind, results_list)
+            results_df <- results_df[!apply(is.na(results_df), 1, all), ]
+            results_df[, 2:7] <- round(results_df[, 2:7], 4)
+
+            datatable(results_df, options = list(
+              pageLength = 5,
+              dom = 't',
+              scrollX = TRUE
+            ), rownames = FALSE)
+          })
+
           outputOptions(output, "showText", suspendWhenHidden = FALSE)
+
           setProgress(value = 1)
         } else {
           output$classification_data_status_TrainModel <- renderUI({
@@ -647,6 +763,8 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
       }
     })
   })
+
+
   observeEvent(input$recalculate_TrainModel, {
     withProgress(message = 'Calculating...', value = 0, {
       setProgress(value = 0.01)
@@ -690,7 +808,13 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
         selected_model <- input$model_selector
         if (selected_model == "KNN") {
           number_cv = input$cv_selector
-          control_knn <- trainControl(method = "cv", number = number_cv, savePredictions = "final")
+          if (input$cv_method == "cv") {
+            control_knn <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "LOOCV") {
+            control_knn <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "randomized_cv") {
+            control_knn <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+          }
           tuneGrid_knn <- expand.grid(k = seq(1, 20, by = 2))
           knn_model <- train(x = x, y = y, method = "knn", trControl = control_knn, tuneGrid = tuneGrid_knn)
           predictions <- predict(knn_model, test_data, type = "prob")
@@ -710,11 +834,32 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           selected_data_model <- significant_data[, ..selected_features]
           predictions_knn <- factor(predict(knn_model, test_data), levels = levels(test_data$class))
           confMat_knn <- confusionMatrix(predictions_knn, test_data$class)
+          class_centers <- aggregate(x, by = list(y), FUN = mean)
+          colnames(class_centers)[1] <- "Class"
+          distance_thresholds <- sapply(levels(y), function(cls) {
+            cls_samples <- x[y == cls, ]
+            distances <- apply(cls_samples, 1, function(sample) {
+              sqrt(sum((sample - class_centers[class_centers$Class == cls, -1])^2))
+            })
+            quantile(distances, 0.95)
+          })
+          knn_model$meta <- list(
+            class_centers = class_centers,
+            distance_thresholds = distance_thresholds,
+            validation_type = "distance"
+          )
+          knn_model$meta$distance_thresholds <- distance_thresholds * 1.2
           confMat_model <- confMat_knn
           model_to_save <- knn_model
         } else if (selected_model == "Random_Forest") {
           number_cv <- input$cv_selector
-          control_rf <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+          if (input$cv_method == "cv") {
+            control_rf <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "LOOCV") {
+            control_rf <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "randomized_cv") {
+            control_rf <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+          }
           tuneGrid_rf <- expand.grid(
             mtry = c(1, floor(sqrt(ncol(train_data) - 1)), ncol(train_data) - 1),
             splitrule = c("gini", "extratrees"),
@@ -744,11 +889,25 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           selected_data_model <- significant_data[, ..selected_features]
           predictions_rf <- factor(predict(rf_model, test_data), levels = levels(test_data$class))
           confMat_rf <- confusionMatrix(predictions_rf, test_data$class)
+          oob_probs <- rf_model$pred[order(rf_model$pred$rowIndex), ]
+          prob_thresholds <- sapply(levels(y), function(cls) {
+            quantile(oob_probs[oob_probs$obs == cls, cls], 0.05)
+          })
+          rf_model$meta <- list(
+            prob_thresholds = prob_thresholds,
+            validation_type = "probability"
+          )
           confMat_model <- confMat_rf
           model_to_save <- rf_model
         } else if (selected_model == "XGBoost") {
           number_cv <- input$cv_selector
-          control_xgb <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+          if (input$cv_method == "cv") {
+            control_xgb <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "LOOCV") {
+            control_xgb <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "randomized_cv") {
+            control_xgb <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+          }
           tuneGrid_xgb <- expand.grid(
             nrounds = c(100, 200),
             max_depth = c(3, 6, 9),
@@ -775,12 +934,28 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           selected_data_model <- significant_data[, ..selected_features]
           predictions_xgb <- factor(predict(xgb_model, test_data), levels = levels(test_data$class))
           confMat_xgb <- confusionMatrix(predictions_xgb, test_data$class)
+          train_leaves <- predict(xgb_model$finalModel, as.matrix(x), predleaf = TRUE)
+          leaf_freq <- apply(train_leaves, 2, function(col) {
+            freq_table <- table(col)
+            freq_table / nrow(train_leaves)
+          })
+          xgb_model$meta <- list(
+            leaf_frequency = leaf_freq,
+            validation_type = "leaf_path",
+            min_freq = 0.01
+          )
           confMat_model <- confMat_xgb
           model_to_save <- xgb_model
         } else if (selected_model == "SVM") {
           number_cv <- input$cv_selector
-          control_svm <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
-          svm_model <- train(x = x, y = y, method = "knn", trControl = control_svm)
+          if (input$cv_method == "cv") {
+            control_svm <- trainControl(method = "cv", number = number_cv, savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "LOOCV") {
+            control_svm <- trainControl(method = "LOOCV", savePredictions = "final", classProbs = TRUE)
+          } else if (input$cv_method == "randomized_cv") {
+            control_svm <- trainControl(method = "cv", number = number_cv, savePredictions = "final", search = "random", classProbs = TRUE)
+          }
+          svm_model <- train(x = x, y = y, method = "svmRadial", trControl = control_svm)
           predictions <- predict(svm_model, test_data, type = "prob")
           class_levels <- levels(test_data$class)
           n_classes <- length(class_levels)
@@ -803,6 +978,14 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           selected_data_model <- significant_data[, ..selected_features]
           predictions_svm <- factor(predict(svm_model, test_data), levels = levels(test_data$class))
           confMat_svm <- confusionMatrix(predictions_svm, test_data$class)
+          decision_values <- kernlab::predict(svm_model$finalModel, as.matrix(x))
+          margin_thresholds <- sapply(levels(y), function(cls) {
+            quantile(decision_values[y == cls], 0.05)
+          })
+          svm_model$meta <- list(
+            margin_thresholds = margin_thresholds,
+            validation_type = "margin"
+          )
           confMat_model <- confMat_svm
           model_to_save <- svm_model
         }
@@ -839,7 +1022,50 @@ TrainModel_server <- function(input, output, session, rvdataclass, rvdatageno, r
           })
           setProgress(value = 0.95)
           values$showText <- FALSE
+
+          output$cv_results_table <- renderDT({
+            req(model_to_save, confMat_model)
+
+            class_names <- rownames(confMat_model$byClass)
+
+            results_list <- lapply(class_names, function(class_name) {
+              sensitivity <- ifelse(!is.na(confMat_model$byClass[class_name, "Sensitivity"]),
+                                    confMat_model$byClass[class_name, "Sensitivity"], NA)
+              specificity <- ifelse(!is.na(confMat_model$byClass[class_name, "Specificity"]),
+                                    confMat_model$byClass[class_name, "Specificity"], NA)
+              recall <- ifelse(!is.na(confMat_model$byClass[class_name, "Recall"]),
+                               confMat_model$byClass[class_name, "Recall"], NA)
+              kappa <- ifelse(!is.na(confMat_model$overall["Kappa"]),
+                              confMat_model$overall["Kappa"], NA)
+              precision <- ifelse(!is.na(confMat_model$byClass[class_name, "Pos Pred Value"]),
+                                  confMat_model$byClass[class_name, "Pos Pred Value"], NA)
+              f1 <- ifelse(!is.na(confMat_model$byClass[class_name, "F1"]),
+                           confMat_model$byClass[class_name, "F1"], NA)
+
+              data.frame(
+                Class = class_name,
+                Sensitivity = sensitivity,
+                Specificity = specificity,
+                Recall = recall,
+                Kappa = kappa,
+                Precision = precision,
+                F1 = f1
+              )
+            })
+
+            results_df <- do.call(rbind, results_list)
+            results_df <- results_df[!apply(is.na(results_df), 1, all), ]
+            results_df[, 2:7] <- round(results_df[, 2:7], 4)
+
+            datatable(results_df, options = list(
+              pageLength = 5,
+              dom = 't',
+              scrollX = TRUE
+            ), rownames = FALSE)
+          })
+
           outputOptions(output, "showText", suspendWhenHidden = FALSE)
+
           setProgress(value = 1)
         } else {
           output$classification_data_status_TrainModel <- renderUI({

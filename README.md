@@ -14,7 +14,7 @@ And a video tutorial is linked [here!](https://github.com/Werewolfzy/rPIMS/blob/
 
 `install.packages("BiocManager")`
 
-`install.packages(c("shiny", "shinythemes", "shinyjs", "DT", "shinyWidgets", "colourpicker", "RColorBrewer", "ggplot2", "data.table", "sommer", "ape", "pbapply", "infotheo", "caret", "class", "randomForest", "xgboost", "ranger", "ROCR", "smacof", "umap", "phangorn", "shinyalert", "leaflet", "e1071", "kernlab"))`
+`install.packages(c("shiny", "shinythemes", "shinyjs", "DT", "pwr", "dplyr", "FNN", "shinyWidgets", "colourpicker", "RColorBrewer", "ggplot2", "data.table", "sommer", "ape", "pbapply", "infotheo", "caret", "class", "randomForest", "xgboost", "ranger", "ROCR", "smacof", "umap", "phangorn", "shinyalert", "leaflet", "e1071", "kernlab"))`
 
 `BiocManager::install("LEA")`
 
